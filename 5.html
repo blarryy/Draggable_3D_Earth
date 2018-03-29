@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<!-- Boyu Zhang-->
+<canvas width="960" height="600"></cavnas>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://unpkg.com/topojson-client@2"></script> //Source for topoJson operations.This project uses topoJson and not geoJson so extra efforts have to be made.
+<script src="versor.js"></script>         // Source for all the mathematical operations. 
+<script>
+    
+    //IMPORTANT
+    //I added two functions to this project as you suggested: 1.Zooming; 2. Showing all the country borders on the map.I also added color to mother Earth since that's the right thing to do.
+    
+var canvas = d3.select("canvas"),        //Author picked canvas over svg to draw the worldmap on, so the drawing it's completely different from our                                                  //textbook.I also read online that 'canvas is recommended for dynamic or interactive projections to improve                                                //performance', so maybe this is the reason author picked canvas.
+    width = canvas.property("width"),
+    height = canvas.property("height"),
+    context = canvas.node().getContext("2d");       //"2d" means drawing 2d object on canvas.
+
+var projection = d3.geoOrthographic()           //Use a specific kind of projection called orthographic projection, where all the projection lines are                                                      orthogonal to the projection plane.
+    .scale(300)                             
+    .translate([width / 2, height / 2]);
+    
+
+var path = d3.geoPath()                             //Path generator.
+    .projection(projection)
+    .context(context);                  
+
+canvas.call(d3.drag()                                  // Add drag function to canvas.One thing to notice is that author did not add dragended to the drag                                                         function.The canvas repaints it self at a really quick speed, looking like it's rotating.
+    .on("start", dragstarted)
+    .on("drag", dragged));  
+
+    //IMPORTANT
+    //The general idea of the mathematical process is this :There are 4 different ways to describe the rotation of a 3d object. D3 uses EULER ANGLE to describe rotations, but it is easier to calculate if we use QUATERNION to describe rotations. So we take EULER ANGLE data generated from d3 when dragging starts, converse it to QUATERNION, then use QUATERNION to calculate the new QUATERNION that describes new position, and converse the new QUATERNION to new EULER ANGLE and feed it back to D3, describing new position after the drag. We converse quaternion back because D3 can only use Euler angles.     
+    
+    
+var render = function() {}, //Declare 4 crucial variables, render() function paints canvas(i.e. draw the earth), v0, r0, q0 are three arrays that are                                   necessary for the calculation of position after the drag.
+    v0, // Mouse position in Cartesian coordinates at start of drag gesture.
+    r0, // Projection rotation in EULER ANGLE at start of drag.
+    q0; // Projection rotation as QUATERNION at start of drag. This is the quaternion that is conversed from euler angle.And the euler angle that conversion uses is the current location on which mouse is clickd. Therefore this quaternion also represents the location on which mouse is clicked.
+    
+    
+    
+function dragstarted() {
+  v0 = versor.cartesian(projection.invert(d3.mouse(this))); // Mouse position in Cartesian coordinates at start of drag gesture.
+                                                            //projection.invert(d3.mouse(this)) returns spherical coordinates [λ, φ]. Cartesian(),which is  // written in versor.js converse spherical coordinates to Cartesian coordinates.
+  r0 = projection.rotate();             //In d3 API, it states that if rotation is not specified, rotate() returns the current rotation . Because it is not                                         specified, it will always return the current location when drag starts.So r0 is the mouse position in Euler angle                                         at start of drag gesture.
+  q0 = versor(r0);                      //Converse r0(Euler angle) to q0(Quaternion).
+     console.log(v0);
+    console.log(r0);
+    console.log(q0);
+}
+
+function dragged() {
+  var v1 = versor.cartesian(projection.rotate(r0).invert(d3.mouse(this))), //This variable will be used later in the delta() function.
+      q1 = versor.multiply(q0, versor.delta(v0, v1)),  // Result of this calculation will be used in multiply() function.
+      r1 = versor.rotation(q1);          // Calculate the new Euler Angle from the new quaternion.
+    console.log(v1);
+    console.log(q1);
+    console.log(r1);
+  projection.rotate(r1);                   //Feed the new Euler Angle back to D3.
+  render();                                //Repaint the Earth based on the new projection.
+}
+
+d3.json("https://unpkg.com/world-atlas@1/world/110m.json", function(error, world) {
+  if (error) throw error;
+
+  var sphere = {type: "Sphere"},                   
+      land = topojson.feature(world, world.objects.land); //Topojson.feature() returns the GeoJSON Feature for the specified object in the given                                                              //topology.Because geopath() can only use geojson file, we must converse topojson to geojson. And                                                     // variable land now contains geoJSON data of continents on Earth.
+      borders = topojson.mesh(world, world.objects.countries); //Variable borders contain geoJSON data of borders on Earth.
+ 
+    render = function() {
+    context.clearRect(0, 0, width, height); // This line of code is actually obselete. The author's intend is clear: everytime program repaints the canvas, it sets the whole canvas to transparent black.In another word, erase the privous work first. But that is actually unnecessary because everytime the program repaints the canvas, the first step it takes is drawing the whole circle to blue,therefore overlapping all the previous work.
+    context.beginPath(), path(sphere), context.fillStyle = "#00FFFF", context.fill(); //Non of these codes are d3 code, they are original JS codes.Draw a circle that's filled with color blue.
+    context.beginPath(), path(land), context.fillStyle = "#7FFF00", context.fill(); //Draw all the continent on the blue circle.
+    context.beginPath(), path(borders), context.stroke(); //Draw borders.(I feel sad to have to divide the people of Earth)
+    };
+
+  render();  // Draw the Earth for the first time.
+    });
+    
+var zoom = d3.zoom().on("zoom", zoomFunction);                  //Zoom function that I added.
+    canvas.call(zoom);
+    function zoomFunction() {
+        var newScale = d3.event.transform.k * 2000;
+        projection.scale(newScale);
+        render();
+    }
+</script>
